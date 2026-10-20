@@ -93,8 +93,25 @@ def ax_trusted() -> tuple[str, str]:
         import ApplicationServices as AS
 
         if AS.AXIsProcessTrusted():
-            return OK, "已授权"
-        return FAIL, "未授权（系统设置 → 隐私与安全性 → 辅助功能 里勾选本程序）"
+            return OK, "已授权（读选区用）"
+        return FAIL, "未授权 → 系统设置 → 隐私与安全性 → 辅助功能 里勾选本程序"
+    except Exception as exc:
+        return FAIL, f"检测失败: {exc}"
+
+
+def listen_event_trusted() -> tuple[str, str]:
+    """输入监控权限：建 CGEventTap 监听鼠标必需，缺它选区复制和粘贴都不工作。"""
+    if sys.platform != "darwin":
+        return OK, "非 macOS"
+    try:
+        import Quartz
+
+        fn = getattr(Quartz, "CGPreflightListenEventAccess", None)
+        if fn is None:
+            return WARN, "当前系统取不到该权限的检测接口"
+        if fn():
+            return OK, "已授权（监听鼠标用）"
+        return FAIL, "未授权 → 系统设置 → 隐私与安全性 → 输入监控 里勾选本程序"
     except Exception as exc:
         return FAIL, f"检测失败: {exc}"
 
@@ -201,6 +218,7 @@ def collect(cfg=None) -> list[tuple[str, str, str]]:
         else:
             rows.append(("代码签名", WARN, verdict))
         rows.append(("辅助功能授权",) + ax_trusted())
+        rows.append(("输入监控授权",) + listen_event_trusted())
         rows.append(("事件监听自检",) + event_tap_ok())
 
     rows.append(("剪贴板",) + clipboard_ok())
@@ -247,12 +265,13 @@ def format_report(rows: list[tuple[str, str, str]]) -> str:
 
 def advice(rows: list[tuple[str, str, str]]) -> str:
     failed = {r[0] for r in rows if r[1] == FAIL}
-    if "事件监听自检" in failed or "辅助功能授权" in failed:
+    if "事件监听自检" in failed or "辅助功能授权" in failed or "输入监控授权" in failed:
         return (
             "修复步骤：\n"
-            "1. 点菜单里的「修复权限」，它会清掉旧的授权记录并打开设置页；\n"
-            "2. 在列表里勾选 AutoCopySel；\n"
-            "3. 回到程序，最多 2 秒会自动生效，不用重启。"
+            "1. 点菜单里的「修复权限」，它会清掉辅助功能和输入监控两个旧记录；\n"
+            "2. 两个面板都要勾：辅助功能（读选区）+ 输入监控（监听鼠标）；\n"
+            "3. 如果列表里已有同名的旧条目，先按 − 删掉，再用 + 手动添加本程序；\n"
+            "4. 回到程序，最多 2 秒会自动生效，不用重启。"
         )
     return ""
 
@@ -267,14 +286,22 @@ def reset_permission() -> tuple[bool, str]:
     # 打包成 .app 后由访达启动时 PATH 可能不完整，用绝对路径更稳
     tccutil = shutil.which("tccutil") or "/usr/bin/tccutil"
     try:
-        proc = subprocess.run(
-            [tccutil, "reset", "Accessibility", APP_ID],
-            capture_output=True,
-            timeout=15,
-        )
-        out = (proc.stdout or b"").decode("utf-8", "replace").strip()
-        err = (proc.stderr or b"").decode("utf-8", "replace").strip()
-        msg = out or err or f"exit={proc.returncode}"
+        # 两个权限都要清：只清辅助功能的话，输入监控里的旧记录（对应旧 cdhash）
+        # 会让系统设置显示「已勾选」但实际被拒——这正是「勾了却没反应」的根源。
+        messages = []
+        ok_all = True
+        for service in ("Accessibility", "ListenEvent"):
+            proc = subprocess.run(
+                [tccutil, "reset", service, APP_ID],
+                capture_output=True,
+                timeout=15,
+            )
+            out = (proc.stdout or b"").decode("utf-8", "replace").strip()
+            err = (proc.stderr or b"").decode("utf-8", "replace").strip()
+            messages.append(f"{service}: {out or err or ('exit=' + str(proc.returncode))}")
+            if proc.returncode != 0:
+                ok_all = False
+        msg = " | ".join(messages)
         opener = shutil.which("open") or "/usr/bin/open"
         try:
             subprocess.Popen(
@@ -285,7 +312,7 @@ def reset_permission() -> tuple[bool, str]:
             )
         except Exception:
             pass
-        return proc.returncode == 0, msg
+        return ok_all, msg
     except Exception as exc:
         return False, str(exc)
 

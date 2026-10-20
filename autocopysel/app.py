@@ -394,11 +394,14 @@ class Application:
                 from .tray import native_prompt
 
                 choice = native_prompt(
-                    f"{APP_NAME} 缺少「辅助功能」权限",
-                    "没有这个权限，程序收不到鼠标事件，选中文本不会有任何反应。\n\n"
-                    "点下面的按钮会：清掉可能残留的旧授权记录 → 打开「辅助功能」设置页。\n"
-                    "然后在列表里勾选 AutoCopySel 就行，最多 2 秒自动生效，不用重启程序。\n\n"
-                    "（如果列表里已经勾着却仍不工作，正是旧记录失配，这个按钮同样能修好。）",
+                    f"{APP_NAME} 还缺系统权限",
+                    "本程序需要两个权限，缺一个都不工作：\n"
+                    "  · 辅助功能 —— 用来读选中的文字\n"
+                    "  · 输入监控 —— 用来监听鼠标（缺它连选区都收不到）\n\n"
+                    "点下面的按钮会清掉两个权限的旧记录，并打开设置页。\n"
+                    "然后在这两个面板里都勾选 AutoCopySel（输入监控别漏），\n"
+                    "最多 2 秒自动生效，不用重启程序。\n\n"
+                    "如果列表里已有同名旧条目，先按 − 删掉，再用 + 添加本程序。",
                     buttons=("重置授权并打开设置", "稍后"),
                     wait=True,
                 )
@@ -460,8 +463,14 @@ class Application:
             pass
 
     def open_permission(self) -> None:
+        """跳到真正缺的那个权限面板。"""
         try:
-            self.service.backend.open_permission_settings()
+            backend = self.service.backend
+            probe = getattr(backend, "listen_event_ok", None)
+            if probe is not None and probe() is False:
+                backend.open_permission_settings("listen_event")
+            else:
+                backend.open_permission_settings()
         except Exception:
             pass
 
@@ -484,9 +493,11 @@ class Application:
         native_prompt(
             "已重置授权记录" if ok else "重置失败",
             (
-                "旧的授权记录已清除，设置页已打开。\n\n"
-                "请在「辅助功能」列表里勾选 AutoCopySel，最多 2 秒会自动生效。\n"
-                "如果列表里还有旧的 AutoCopySel 条目，先按 − 删掉再重新添加。"
+                "辅助功能 + 输入监控的旧记录都已清除。\n\n"
+                "请在这两个面板里都勾选 AutoCopySel：\n"
+                "  · 辅助功能（读选区）\n"
+                "  · 输入监控（监听鼠标，最容易漏）\n\n"
+                "勾完最多 2 秒自动生效。若列表里已有同名旧条目，先按 − 删掉再重新添加。"
             )
             if ok
             else f"tccutil 返回：{msg}\n\n可以手动执行：tccutil reset Accessibility com.liqin.autocopysel",

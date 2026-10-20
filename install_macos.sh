@@ -42,12 +42,15 @@ echo "已安装：$APP_DST"
 
 echo
 echo "== 4/5 重置旧的辅助功能授权记录 =="
-if /usr/bin/tccutil reset Accessibility "$BUNDLE_ID"; then
-  echo "已重置。"
-else
-  echo "!! 重置失败。请手动执行："
-  echo "   tccutil reset Accessibility $BUNDLE_ID"
-fi
+# 两个权限都要清：只清辅助功能的话，输入监控里的旧记录（对应旧 cdhash）
+# 会让系统设置显示「已勾选」但实际被拒。
+for SVC in Accessibility ListenEvent; do
+  if /usr/bin/tccutil reset "$SVC" "$BUNDLE_ID"; then
+    echo "  已重置 $SVC"
+  else
+    echo "  !! $SVC 重置失败，请手动执行：tccutil reset $SVC $BUNDLE_ID"
+  fi
+done
 
 echo
 echo "== 5/5 启动 =="

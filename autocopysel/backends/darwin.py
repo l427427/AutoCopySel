@@ -25,25 +25,56 @@ class DarwinBackend(Backend):
             pass
 
     # ---------------- 权限 ----------------
+    # macOS 上这个程序需要两个权限，缺一个都不工作：
+    #   辅助功能 Accessibility  → 读选区（AXSelectedText）
+    #   输入监控 Input Monitoring → 建 CGEventTap 监听全局鼠标
+    # 早期版本只检查了前者，导致「勾了辅助功能却还是没反应」。
+    def listen_event_ok(self) -> bool | None:
+        """输入监控权限。None 表示当前系统取不到该 API（按通过处理，不误报）。"""
+        try:
+            import Quartz
+
+            fn = getattr(Quartz, "CGPreflightListenEventAccess", None)
+            if fn is None:
+                return None
+            return bool(fn())
+        except Exception:
+            return None
+
     def permission_ok(self) -> tuple[bool, str]:
         try:
-            if self.AS.AXIsProcessTrusted():
-                return True, "无障碍权限已授权"
+            ax_ok = bool(self.AS.AXIsProcessTrusted())
         except Exception:
             return False, "无法检测无障碍权限"
-        return False, "缺少「辅助功能（Accessibility）」权限"
+
+        li_ok = self.listen_event_ok()
+
+        if ax_ok and li_ok is not False:
+            return True, "辅助功能已授权"
+        if not ax_ok and li_ok is False:
+            return False, "缺少「辅助功能」和「输入监控」两个权限"
+        if not ax_ok:
+            return False, "缺少「辅助功能（Accessibility）」权限（读选区要用）"
+        return False, "缺少「输入监控（Input Monitoring）」权限（监听鼠标要用）"
 
     def prompt_permission(self) -> None:
+        """同时触发两个权限的系统请求弹窗，缺哪个都会弹。"""
         try:
             self.AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": True})
         except Exception:
             pass
+        try:
+            import Quartz
 
-    def open_permission_settings(self) -> None:
-        url = (
-            "x-apple.systempreferences:com.apple.preference.security"
-            "?Privacy_Accessibility"
-        )
+            fn = getattr(Quartz, "CGRequestListenEventAccess", None)
+            if fn is not None and self.listen_event_ok() is False:
+                fn()
+        except Exception:
+            pass
+
+    def open_permission_settings(self, which: str = "accessibility") -> None:
+        pane = "Privacy_ListenEvent" if which == "listen_event" else "Privacy_Accessibility"
+        url = f"x-apple.systempreferences:com.apple.preference.security?{pane}"
         try:
             import shutil
 
