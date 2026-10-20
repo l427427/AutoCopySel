@@ -1,6 +1,8 @@
 """平台后端公共接口。"""
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import dataclass
 
 
@@ -41,6 +43,36 @@ class Backend:
     def send_copy(self) -> None:
         """模拟系统复制快捷键。"""
         raise NotImplementedError
+
+    def send_paste(self) -> None:
+        """模拟系统粘贴快捷键（Cmd+V / Ctrl+V）。
+
+        这里给通用实现，各平台不覆盖——粘贴就是一对快捷键，没有平台差异。
+        """
+        from pynput.keyboard import Controller, Key
+
+        mod = Key.cmd if sys.platform == "darwin" else Key.ctrl
+        kb = Controller()
+        try:
+            with kb.pressed(mod):
+                kb.press("v")
+                kb.release("v")
+            return
+        except Exception:
+            pass
+        # pressed() 上下文在个别环境异常时，退回手动按下/抬起
+        try:
+            kb.press(mod)
+            time.sleep(0.01)
+            kb.press("v")
+            kb.release("v")
+        except Exception:
+            pass
+        finally:
+            try:
+                kb.release(mod)
+            except Exception:
+                pass
 
     # ---- 状态 ----
     def modifiers_down(self) -> bool:

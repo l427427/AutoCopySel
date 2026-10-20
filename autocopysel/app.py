@@ -47,7 +47,7 @@ class Service:
         self.history: deque[tuple[str, float]] = deque(
             maxlen=max(1, int(cfg.get("history_size") or 20))
         )
-        self.stats = {"ok": 0, "skip": 0, "error": 0}
+        self.stats = {"ok": 0, "skip": 0, "error": 0, "paste": 0}
         self.last_message = ""
 
         self._q: queue.Queue = queue.Queue(maxsize=16)
@@ -56,7 +56,9 @@ class Service:
         self._last_text_at = 0.0
         self._worker: threading.Thread | None = None
         self._running = False
-        self._watcher = MouseSelectionWatcher(self._submit, cfg, self.backend)
+        self._watcher = MouseSelectionWatcher(
+            self._submit, cfg, self.backend, on_paste=self._paste_gesture
+        )
 
         # 由 Application 注入的事件回调：on_result(kind, text)
         self.on_result = None
@@ -119,6 +121,48 @@ class Service:
             self._q.put_nowait((x, y, kind))
         except queue.Full:
             log.debug("queue full, drop event")
+
+    def _paste_gesture(self) -> None:
+        """左键按住 + 右键单击：把剪贴板内容粘贴到当前应用。
+
+        直接在鼠标线程里执行，不进取词队列——粘贴是即时动作，
+        排队会引入延迟，也会被去抖逻辑吞掉。
+        """
+        if not self.enabled:
+            return
+
+        try:
+            has_content = clipboard.has_content()
+        except Exception:
+            has_content = bool(clipboard.get_text())
+
+        if not has_content:
+            # 空剪贴板不发按键：有的应用会把「粘贴空内容」当成删除，
+            # 或者弹出「剪贴板为空」的提示，反而打扰用户。
+            self.last_message = "左键+右键：剪贴板为空，未粘贴"
+            log.info("paste gesture: 剪贴板为空，跳过")
+            self._emit("paste_empty")
+            return
+
+        try:
+            self.backend.send_paste()
+        except Exception as exc:
+            log.warning("paste gesture failed: %s", exc)
+            self.last_message = "左键+右键：粘贴失败"
+            return
+
+        self.stats["paste"] += 1
+        self.last_message = "左键+右键：已粘贴"
+        log.info("paste gesture: 已发送粘贴（累计 %d 次）", self.stats["paste"])
+        self._emit("paste")
+
+    def _emit(self, kind: str) -> None:
+        if self.on_result is None:
+            return
+        try:
+            self.on_result(kind, None)
+        except Exception:
+            pass
 
     def trigger_now(self) -> None:
         """手动触发一次（菜单 / 快捷键）。"""
@@ -383,6 +427,10 @@ class Application:
     def toggle_sound(self) -> None:
         self.cfg.set("sound", not bool(self.cfg.get("sound")))
 
+    def toggle_paste_gesture(self) -> None:
+        self.cfg.set("paste_gesture", not bool(self.cfg.get("paste_gesture")))
+        log.info("paste_gesture=%s", self.cfg.get("paste_gesture"))
+
     def set_mode(self, mode: str) -> None:
         self.cfg.set("capture_mode", mode)
         log.info("capture_mode=%s", mode)
@@ -473,6 +521,7 @@ class Application:
             f"取词方式：{self.cfg.get('capture_mode')}\n"
             f"状态：{'运行中' if self.service.enabled else '已暂停'}\n"
             f"累计复制：{self.service.stats['ok']} 次\n"
+            f"累计粘贴：{self.service.stats.get('paste', 0)} 次\n"
             f"配置文件：{self.cfg.path}"
         )
 
@@ -490,8 +539,11 @@ class Application:
     def _on_result(self, kind: str, res) -> None:
         # 只有成功才闪绿点。失败的拖拽（拖窗口、拖文件、拖滚动条）太常见，
         # 每次都闪一下会变成噪音。
-        if kind == "ok":
+        if kind in ("ok", "paste"):
             self._flash("ok")
+        elif kind == "paste_empty":
+            # 手势识别到了但剪贴板是空的，闪黄点提示，否则用户以为手势没生效
+            self._flash("warn")
 
     def _on_error(self, exc) -> None:
         self._flash("warn")

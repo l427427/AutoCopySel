@@ -6,20 +6,30 @@
 """
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
 from typing import Callable
+
+log = logging.getLogger("autocopysel")
 
 MULTI_CLICK_WINDOW = 0.55  # 秒
 MULTI_CLICK_DIST = 8  # 像素
 
 
 class MouseSelectionWatcher:
-    def __init__(self, on_select: Callable[[int, int, str], None], cfg, backend):
+    def __init__(
+        self,
+        on_select: Callable[[int, int, str], None],
+        cfg,
+        backend,
+        on_paste: Callable[[], None] | None = None,
+    ):
         self._on_select = on_select
         self.cfg = cfg
         self.backend = backend
+        self.on_paste = on_paste
 
         self._listener = None
         self._press: tuple[float, float, float] | None = None
@@ -28,6 +38,12 @@ class MouseSelectionWatcher:
         self._click_count = 0
         self._lock = threading.Lock()
         self.dead_reason = ""
+
+        # 「左键按住 + 右键单击 → 粘贴」用到的状态
+        self._left_down = False  # 左键此刻是否按着
+        self._right_armed = False  # 这次右键按下是否发生在左键按着期间
+        self._suppress_capture = False  # 本个左键周期已用于粘贴，松手不再自动复制
+        self._last_paste_at = 0.0
 
     # ---------- 生命周期 ----------
     def start(self) -> bool:
@@ -87,6 +103,16 @@ class MouseSelectionWatcher:
     def _on_click(self, x, y, button, pressed):
         from pynput import mouse
 
+        # 右键只用于手势判定，而且整段包死：任何异常都不允许影响左键主路径。
+        # 注意这里取 button.name 而不是比较 mouse.Button.right —— 万一某个 pynput
+        # 后端没有 right 这个枚举成员，写死比较会让每个事件都抛异常，监听直接全废。
+        if getattr(button, "name", "") == "right":
+            try:
+                return self._on_right_click(pressed)
+            except Exception:
+                log.exception("右键手势处理异常")
+                return True
+
         if button != mouse.Button.left:
             return True
 
@@ -94,12 +120,25 @@ class MouseSelectionWatcher:
 
         if pressed:
             with self._lock:
+                self._left_down = True
                 self._press = (float(x), float(y), now)
+                self._right_armed = False
+                self._suppress_capture = False
             return True
 
         with self._lock:
+            self._left_down = False
+            self._right_armed = False
             press = self._press
             self._press = None
+
+            if self._suppress_capture:
+                # 这个左键周期已经用于粘贴，松手不再自动复制；同时清多击计数，
+                # 免得下一次单击被误判成双击。
+                self._suppress_capture = False
+                self._click_count = 0
+                return True
+
             if press is None:
                 return True
             px, py, pt = press
@@ -149,3 +188,44 @@ class MouseSelectionWatcher:
         except Exception:
             pass
         return True
+
+    # ---------- 左键按住 + 右键单击 → 粘贴 ----------
+    def _on_right_click(self, pressed: bool) -> bool:
+        """只有「左键按住期间完成一次右键单击（按下+释放）」才触发粘贴。
+
+        三项必须同时成立：
+        1. 右键按下那一刻左键是按着的（记进 _right_armed）；
+        2. 右键释放那一刻左键仍然按着（中途松了左键就不算）；
+        3. 右键必须走完按下→释放，只按下半程不算。
+
+        因此：左键单独释放不触发，右键单独点击不触发。
+        """
+        if pressed:
+            with self._lock:
+                self._right_armed = self._left_down
+            return True
+
+        with self._lock:
+            armed = self._right_armed
+            self._right_armed = False
+            left_still_down = self._left_down
+
+        if armed and left_still_down:
+            self._fire_paste()
+        return True
+
+    def _fire_paste(self) -> None:
+        if self.on_paste is None or not self.cfg.get("paste_gesture"):
+            return
+        now = time.monotonic()
+        debounce = float(self.cfg.get("paste_debounce_ms") or 250) / 1000.0
+        if now - self._last_paste_at < debounce:
+            return
+        self._last_paste_at = now
+        with self._lock:
+            # 本个左键周期改成「粘贴用途」，松手时不再触发自动复制
+            self._suppress_capture = True
+        try:
+            self.on_paste()
+        except Exception:
+            log.exception("粘贴手势回调异常")

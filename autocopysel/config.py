@@ -57,6 +57,10 @@ DEFAULTS: dict[str, Any] = {
     "detect_multi_click": True,
     # 按住 Ctrl / Cmd / Win 时拖动不触发（避免和「Cmd+拖动」类操作冲突）
     "ignore_with_modifiers": True,
+    # 左键按住期间单击右键 → 粘贴；判定见 hook.py 的 _on_right_click
+    "paste_gesture": True,
+    # 连续贴两次之间至少间隔多少毫秒（过滤右键抖动）
+    "paste_debounce_ms": 250,
     # 文本长度过滤
     "min_length": 1,
     "max_length": 100000,
