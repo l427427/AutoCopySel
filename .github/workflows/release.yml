@@ -59,34 +59,14 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --strict "$APP" && echo "重签有效 / v$V"
 
-      - name: 写使用说明并打包 zip
+      - name: 打包 zip（附中文使用说明）
         run: |
-          cat > 使用说明.txt <<'TXT'
-AutoCopySel —— 鼠标划词自动复制
-
-【安装】
-1. 把 AutoCopySel.app 拖到「应用程序」文件夹
-2. 首次打开：在「应用程序」里右键点它 → 打开 → 再点「打开」
-   （如果你是从浏览器下载的，macOS 会拦一次，这是正常的：
-     没有 Apple 开发者签名的免费应用都会被拦。）
-3. 系统设置 → 隐私与安全性 → 辅助功能 → 勾选 AutoCopySel
-4. 不需要重启，勾上后 2 秒内自动生效
-
-【验证是否可用】
-打开任意软件，用鼠标选中一段文字，然后 Cmd+V 粘贴试试。
-
-【如果勾了却没反应】
-点菜单栏图标 → 「修复权限（重置授权记录）」→ 重新勾选。
-原因：本项目是 ad-hoc 签名，macOS 记录授权靠二进制哈希，
-换一个版本的程序就会失配，必须重置一次。
-
-详细说明见仓库 README。
-TXT
           # ditto 能保留 .app 的符号链接与代码签名，是分发 macOS 应用的标准做法
           ditto -c -k --sequesterRsrc --keepParent dist/AutoCopySel.app "AutoCopySel-macos-arm64/AutoCopySel.app"
-          cp 使用说明.txt "AutoCopySel-macos-arm64/使用说明.txt"
+          cp packaging/INSTALL-macos.txt "AutoCopySel-macos-arm64/使用说明.txt"
           ditto -c -k --sequesterRsrc --keepParent "AutoCopySel-macos-arm64" AutoCopySel-macos-arm64.zip
           ls -lh AutoCopySel-macos-arm64.zip
+          unzip -l AutoCopySel-macos-arm64.zip | head -8
 
       - uses: actions/upload-artifact@v4
         with:
@@ -122,29 +102,15 @@ TXT
             --collect-submodules pystray `
             run.py
 
-      - name: 组装 zip
+      - name: 组装 zip（附中文使用说明）
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path AutoCopySel-windows-x64 | Out-Null
           Copy-Item dist\AutoCopySel.exe AutoCopySel-windows-x64\
-          @"
-AutoCopySel —— 鼠标划词自动复制
-
-【使用】
-解压后双击 AutoCopySel.exe 即可，托盘区会出现图标。
-
-【首次运行被拦】
-Windows 会提示"Windows 已保护你的电脑"，点「更多信息」→「仍要运行」。
-这是因为没有代码签名证书，不是病毒。
-
-【验证是否可用】
-打开任意软件，用鼠标选中一段文字，然后 Ctrl+V 粘贴试试。
-
-【如果选中没反应】
-右键托盘图标 →「运行诊断」，会告诉你哪一步没通。
-
-详细说明见仓库 README。
-"@ | Set-Content -Path AutoCopySel-windows-x64\使用说明.txt -Encoding UTF8
+          Copy-Item packaging\INSTALL-windows.txt -Destination "AutoCopySel-windows-x64\使用说明.txt"
+          Compress-Archive -Path AutoCopySel-windows-x64\* -DestinationPath AutoCopySel-windows-x64.zip -Force
+          Get-ChildItem AutoCopySel-windows-x64 | Select-Object Name, Length
+          Get-Item AutoCopySel-windows-x64.zip | Select-Object Name, Length
           Compress-Archive -Path AutoCopySel-windows-x64\* -DestinationPath AutoCopySel-windows-x64.zip -Force
           Get-Item AutoCopySel-windows-x64.zip | Select-Object Name, Length
 
