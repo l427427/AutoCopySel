@@ -61,12 +61,22 @@ jobs:
 
       - name: 打包 zip（附中文使用说明）
         run: |
-          # ditto 能保留 .app 的符号链接与代码签名，是分发 macOS 应用的标准做法
-          ditto -c -k --sequesterRsrc --keepParent dist/AutoCopySel.app "AutoCopySel-macos-arm64/AutoCopySel.app"
+          set -e
+          # 注意：ditto 带 -c 是「创建归档」，会把 .app 打成一个 zip 文件；
+          # 复制目录必须不带 -c，否则解压出来的 AutoCopySel.app 不是目录，用户根本打不开。
+          mkdir -p AutoCopySel-macos-arm64
+          ditto dist/AutoCopySel.app AutoCopySel-macos-arm64/AutoCopySel.app
           cp packaging/INSTALL-macos.txt "AutoCopySel-macos-arm64/使用说明.txt"
-          ditto -c -k --sequesterRsrc --keepParent "AutoCopySel-macos-arm64" AutoCopySel-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent AutoCopySel-macos-arm64 AutoCopySel-macos-arm64.zip
+
+          # 发出去之前自检：app 必须是目录树，且二进制是 arm64
+          if [ ! -d AutoCopySel-macos-arm64/AutoCopySel.app/Contents/MacOS ]; then
+            echo "打包错误：AutoCopySel.app 不是目录"; exit 1
+          fi
+          file AutoCopySel-macos-arm64/AutoCopySel.app/Contents/MacOS/AutoCopySel
+          codesign --verify --strict AutoCopySel-macos-arm64/AutoCopySel.app
           ls -lh AutoCopySel-macos-arm64.zip
-          unzip -l AutoCopySel-macos-arm64.zip | head -8
+          unzip -l AutoCopySel-macos-arm64.zip | head -6
 
       - uses: actions/upload-artifact@v4
         with:
@@ -107,7 +117,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path AutoCopySel-windows-x64 | Out-Null
           Copy-Item dist\AutoCopySel.exe AutoCopySel-windows-x64\
-          Copy-Item packaging\INSTALL-windows.txt -Destination "AutoCopySel-windows-x64\使用说明.txt"
+          Copy-Item packaging\INSTALL-windows.txt -Destination "AutoCopySel-windows-x64\README-FIRST.txt"
           Compress-Archive -Path AutoCopySel-windows-x64\* -DestinationPath AutoCopySel-windows-x64.zip -Force
           Get-ChildItem AutoCopySel-windows-x64 | Select-Object Name, Length
           Get-Item AutoCopySel-windows-x64.zip | Select-Object Name, Length
