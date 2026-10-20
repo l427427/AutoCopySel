@@ -2,6 +2,21 @@
 
 后台常驻，鼠标划词即自动复制。Windows / macOS 通用，Python 实现，无窗口、只有托盘图标。
 
+选中文本 → 自动进剪贴板 → 直接 Cmd+V / Ctrl+V。不弹工具栏、不打断你正在做的事。
+
+```bash
+git clone git@github.com:l427427/AutoCopySel.git
+cd AutoCopySel
+
+# macOS：一条命令搞定（打包 + 安装 + 重置授权 + 启动）
+./install_macos.sh
+```
+
+Windows 见 [安装与运行](#三安装与运行)。首次启动必须授予「辅助功能」权限，[第七节](#七授权了却没反应这是必读的一节)专门讲这个坑。
+
+> 本项目不做预编译分发：本地 ad-hoc 签名，别人下载的 `.app` 会被 Gatekeeper 拦，还要手动去隔离属性。
+> 从源码打包反而更省事，`build_macos.sh` / `build_windows.bat` 各一条命令。
+
 ---
 
 ## 一、GitHub 同类项目调研（2026-10）
