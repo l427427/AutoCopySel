@@ -168,25 +168,9 @@ class DarwinBackend(Backend):
                     queue.append((child, depth + 1))
         return None
 
-    # ---------------- 模拟复制 ----------------
-    def send_copy(self) -> None:
-        from pynput.keyboard import Controller, Key
-
-        kb = Controller()
-        try:
-            with kb.pressed(Key.cmd):
-                kb.press("c")
-                kb.release("c")
-        except Exception:
-            # 某些环境 pressed() 上下文行为异常，退回手动按下/抬起
-            try:
-                kb.press(Key.cmd)
-                time.sleep(0.01)
-                kb.press("c")
-                kb.release("c")
-                kb.release(Key.cmd)
-            except Exception:
-                pass
+    # ---------------- 模拟复制 / 粘贴 ----------------
+    # send_copy() / send_paste() 由 Backend 基类统一实现（Cmd+C / Cmd+V，
+    # 带 pressed() 异常时的手动按下/抬起兜底），这里不再重复。
 
     # ---------------- 修饰键状态 ----------------
     def modifiers_down(self) -> bool:

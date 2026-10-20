@@ -44,13 +44,7 @@ class LinuxBackend(Backend):
         except Exception:
             return None
 
-    def send_copy(self) -> None:
-        from pynput.keyboard import Controller, Key
-
-        kb = Controller()
-        with kb.pressed(Key.ctrl):
-            kb.press("c")
-            kb.release("c")
+    # send_copy() / send_paste() 由 Backend 基类统一实现（Ctrl+C / Ctrl+V）
 
     def modifiers_down(self) -> bool:
         return False

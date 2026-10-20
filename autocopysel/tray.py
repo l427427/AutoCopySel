@@ -138,6 +138,11 @@ def build_menu(app) -> Menu:
         Menu.SEPARATOR,
         MenuItem("取词方式", mode_menu),
         MenuItem(
+            "左键按住 + 右键单击 → 粘贴",
+            lambda i, it: app.toggle_paste_gesture(),
+            checked=lambda it: bool(cfg.get("paste_gesture")),
+        ),
+        MenuItem(
             "提示音",
             lambda i, it: app.toggle_sound(),
             checked=lambda it: bool(cfg.get("sound")),

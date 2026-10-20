@@ -1,6 +1,8 @@
 """平台后端公共接口。"""
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import dataclass
 
 
@@ -38,9 +40,50 @@ class Backend:
         """用系统无障碍接口直接读出当前选中文本。不支持时返回 None。"""
         return None
 
+    # ---- 模拟快捷键 ----
+    def _modifier_key(self):
+        from pynput.keyboard import Key
+
+        return Key.cmd if sys.platform == "darwin" else Key.ctrl
+
+    def _send_hotkey(self, char: str) -> bool:
+        """按住平台修饰键敲一下 char。失败时退回手动按下/抬起。"""
+        try:
+            from pynput.keyboard import Controller
+
+            kb = Controller()
+        except Exception:
+            return False
+
+        mod = self._modifier_key()
+        try:
+            with kb.pressed(mod):
+                kb.press(char)
+                kb.release(char)
+            return True
+        except Exception:
+            pass
+        try:
+            kb.press(mod)
+            time.sleep(0.01)
+            kb.press(char)
+            kb.release(char)
+            return True
+        except Exception:
+            return False
+        finally:
+            try:
+                kb.release(mod)
+            except Exception:
+                pass
+
     def send_copy(self) -> None:
         """模拟系统复制快捷键。"""
-        raise NotImplementedError
+        self._send_hotkey("c")
+
+    def send_paste(self) -> None:
+        """模拟系统粘贴快捷键。"""
+        self._send_hotkey("v")
 
     # ---- 状态 ----
     def modifiers_down(self) -> bool:

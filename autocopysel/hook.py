@@ -16,10 +16,17 @@ MULTI_CLICK_DIST = 8  # 像素
 
 
 class MouseSelectionWatcher:
-    def __init__(self, on_select: Callable[[int, int, str], None], cfg, backend):
+    def __init__(
+        self,
+        on_select: Callable[[int, int, str], None],
+        cfg,
+        backend,
+        on_paste: Callable[[], None] | None = None,
+    ):
         self._on_select = on_select
         self.cfg = cfg
         self.backend = backend
+        self.on_paste = on_paste
 
         self._listener = None
         self._press: tuple[float, float, float] | None = None
@@ -28,6 +35,12 @@ class MouseSelectionWatcher:
         self._click_count = 0
         self._lock = threading.Lock()
         self.dead_reason = ""
+
+        # 左键 + 右键 组合手势的状态
+        self._left_down = False  # 左键此刻是否按着
+        self._right_armed = False  # 这次右键按下是否发生在左键按着期间
+        self._suppress_capture = False  # 本个左键周期已被右键粘贴消费，松手不再自动复制
+        self._last_paste_at = 0.0
 
     # ---------- 生命周期 ----------
     def start(self) -> bool:
@@ -87,6 +100,8 @@ class MouseSelectionWatcher:
     def _on_click(self, x, y, button, pressed):
         from pynput import mouse
 
+        if button == mouse.Button.right:
+            return self._on_right_click(pressed)
         if button != mouse.Button.left:
             return True
 
@@ -94,12 +109,25 @@ class MouseSelectionWatcher:
 
         if pressed:
             with self._lock:
+                self._left_down = True
                 self._press = (float(x), float(y), now)
+                self._right_armed = False
+                self._suppress_capture = False
             return True
 
         with self._lock:
+            self._left_down = False
+            self._right_armed = False
             press = self._press
             self._press = None
+
+            if self._suppress_capture:
+                # 这个左键周期已经用于「左键+右键 粘贴」，松手不再自动复制，
+                # 同时重置多击计数，避免下一次点击被误判成双击。
+                self._suppress_capture = False
+                self._click_count = 0
+                return True
+
             if press is None:
                 return True
             px, py, pt = press
@@ -149,3 +177,43 @@ class MouseSelectionWatcher:
         except Exception:
             pass
         return True
+
+    # ---------- 左键+右键 → 粘贴 ----------
+    def _on_right_click(self, pressed: bool) -> bool:
+        """左键按住期间完成一次右键单击（按下+释放）才触发粘贴。
+
+        三个必须同时成立的要点：
+        1. 右键「按下」那一刻左键必须是按着的（记到 _right_armed）；
+        2. 右键「释放」那一刻左键仍然按着（中途松了左键就不算）；
+        3. 右键必须走完按下→释放，只有半程不算。
+        因此：左键单独释放不触发，右键单独点击不触发。
+        """
+        if pressed:
+            with self._lock:
+                self._right_armed = self._left_down
+            return True
+
+        with self._lock:
+            armed = self._right_armed
+            self._right_armed = False
+            left_still_down = self._left_down
+
+        if armed and left_still_down:
+            self._emit_paste()
+        return True
+
+    def _emit_paste(self) -> None:
+        if self.on_paste is None or not self.cfg.get("paste_gesture"):
+            return
+        now = time.monotonic()
+        debounce = float(self.cfg.get("paste_debounce_ms") or 250) / 1000.0
+        if now - self._last_paste_at < debounce:
+            return
+        self._last_paste_at = now
+        with self._lock:
+            # 本次左键周期改成「粘贴用途」，松手时不再触发自动复制
+            self._suppress_capture = True
+        try:
+            self.on_paste()
+        except Exception:
+            pass

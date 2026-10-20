@@ -71,23 +71,9 @@ class Win32Backend(Backend):
         # Windows 没有等价的全局「读选区」接口，统一走 Ctrl+C
         return None
 
-    def send_copy(self) -> None:
-        from pynput.keyboard import Controller, Key
-
-        kb = Controller()
-        try:
-            with kb.pressed(Key.ctrl):
-                kb.press("c")
-                kb.release("c")
-        except Exception:
-            try:
-                kb.press(Key.ctrl)
-                time.sleep(0.01)
-                kb.press("c")
-                kb.release("c")
-                kb.release(Key.ctrl)
-            except Exception:
-                pass
+    # ---------------- 模拟复制 / 粘贴 ----------------
+    # send_copy() / send_paste() 由 Backend 基类统一实现（Ctrl+C / Ctrl+V），
+    # 这里不再重复。
 
     # ---------------- 修饰键状态 ----------------
     def modifiers_down(self) -> bool:
