@@ -4,6 +4,28 @@
 
 选中文本 → 自动进剪贴板 → 直接 Cmd+V / Ctrl+V。不弹工具栏、不打断你正在做的事。
 
+## 直接下载（只想用的话）
+
+到 [Releases](https://github.com/l427427/AutoCopySel/releases) 下对应压缩包，解压即用：
+
+| 平台 | 文件 | 首次运行 |
+|---|---|---|
+| macOS（M 系列 / arm64） | `AutoCopySel-macos-arm64.zip` | 拖进「应用程序」→ **右键 → 打开** |
+| Windows 10/11 x64 | `AutoCopySel-windows-x64.zip` | 双击 `AutoCopySel.exe` |
+
+**macOS 装完必须多做一步**：系统设置 → 隐私与安全性 → 辅助功能 → 勾选 AutoCopySel。
+不授权的话鼠标事件收不到，选中文本不会有任何反应。勾上后 2 秒内自动生效，不用重启。
+
+> **为什么 macOS 要右键打开、还要手动授权**
+> 两个原因，都不是靠改代码能消掉的：
+> 1. 没有 Apple 开发者签名（$99/年）+ 公证，未签名 app 会被 Gatekeeper 拦一次；
+> 2. 「辅助功能」权限是 TCC 按本机、按用户、按二进制授予的，**只能由本机用户亲自勾选**，
+>    任何分发方式都绕不开（除非企业 MDM 批量下发）。
+>
+> Windows 侧只差一个 SmartScreen 提示（更多信息 → 仍要运行），功能上解压即用。
+
+## 从源码构建
+
 ```bash
 git clone git@github.com:l427427/AutoCopySel.git
 cd AutoCopySel
@@ -14,8 +36,8 @@ cd AutoCopySel
 
 Windows 见 [安装与运行](#三安装与运行)。首次启动必须授予「辅助功能」权限，[第七节](#七授权了却没反应这是必读的一节)专门讲这个坑。
 
-> 本项目不做预编译分发：本地 ad-hoc 签名，别人下载的 `.app` 会被 Gatekeeper 拦，还要手动去隔离属性。
-> 从源码打包反而更省事，`build_macos.sh` / `build_windows.bat` 各一条命令。
+> Windows 的 exe 必须**在 Windows 上用** `build_windows.bat` 打（PyInstaller 不支持交叉编译）。
+> 仓库里的 Release 是 GitHub Actions 的 windows runner 构建的，见 `.github/workflows/release.yml`。
 
 ---
 
