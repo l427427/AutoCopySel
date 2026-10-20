@@ -246,6 +246,15 @@ class Service:
             pass
 
 
+def permission_buttons(ax_ok: bool, li_ok: bool) -> tuple[str, str]:
+    """缺哪个权限就把哪个放第一位（macOS 的默认按钮 = 第一个）。"""
+    if ax_ok is False:
+        return "打开辅助功能", "打开输入监控"
+    if li_ok is False:
+        return "打开输入监控", "打开辅助功能"
+    return "打开辅助功能", "打开输入监控"
+
+
 class Application:
     """把 Service 和托盘图标拼起来。"""
 
@@ -378,8 +387,18 @@ class Application:
             except Exception:
                 pass
 
+    def permission_flags(self) -> tuple[bool, bool]:
+        """返回 (辅助功能是否可用, 输入监控是否可用)。检测不到的一律按通过处理。"""
+        try:
+            state = self.service.backend.permission_state()
+        except Exception:
+            return True, True
+        ax = state.get("accessibility")
+        li = state.get("listen_event")
+        return (ax is not False, li is not False)
+
     def _notify_permission_missing(self, force: bool = False) -> None:
-        """缺权限时说清楚：为什么没反应、点哪里、点了会怎样。"""
+        """缺权限时说清楚：缺哪个、为什么缺它就不工作、点哪里去补。"""
         if self._alerted_permission and not force:
             return
         if self._dialog_open:
@@ -393,23 +412,40 @@ class Application:
             try:
                 from .tray import native_prompt
 
+                ax_ok, li_ok = self.permission_flags()
+                lines = [
+                    "本程序需要两个系统权限，缺一个都不工作：",
+                    "",
+                    f"{'✓' if ax_ok else '✗'}  辅助功能 —— 读取选中的文字",
+                    f"{'✓' if li_ok else '✗'}  输入监控 —— 监听鼠标（划词就靠它）",
+                    "",
+                ]
+                if ax_ok and not li_ok:
+                    lines.append("现在只差「输入监控」，补上就能用。")
+                    lines.append("")
+                elif li_ok and not ax_ok:
+                    lines.append("现在只差「辅助功能」，补上就能用。")
+                    lines.append("")
+                lines.append("点下面的按钮会直接跳到对应面板，勾选后自动生效，不用重启。")
+                lines.append("如果列表里已有同名的旧条目，先按 − 删掉，再用 + 添加本程序。")
+
+                first, second = permission_buttons(ax_ok, li_ok)
+
                 choice = native_prompt(
-                    f"{APP_NAME} 还缺系统权限",
-                    "本程序需要两个权限，缺一个都不工作：\n"
-                    "  · 辅助功能 —— 用来读选中的文字\n"
-                    "  · 输入监控 —— 用来监听鼠标（缺它连选区都收不到）\n\n"
-                    "点下面的按钮会清掉两个权限的旧记录，并打开设置页。\n"
-                    "然后在这两个面板里都勾选 AutoCopySel（输入监控别漏），\n"
-                    "最多 2 秒自动生效，不用重启程序。\n\n"
-                    "如果列表里已有同名旧条目，先按 − 删掉，再用 + 添加本程序。",
-                    buttons=("重置授权并打开设置", "稍后"),
+                    f"{APP_NAME} 需要系统权限",
+                    "\n".join(lines),
+                    buttons=(first, second, "稍后"),
                     wait=True,
                 )
                 log.info("permission dialog choice: %s", choice)
-                if choice == "重置授权并打开设置":
-                    self.fix_permission(show_result=False)
+
+                backend = self.service.backend
+                if choice == "打开辅助功能":
+                    backend.open_permission_settings("accessibility")
+                elif choice == "打开输入监控":
+                    backend.open_permission_settings("listen_event")
             except Exception:
-                pass
+                log.debug("permission dialog failed", exc_info=True)
             finally:
                 self._dialog_open = False
 
@@ -462,15 +498,17 @@ class Application:
         except Exception:
             pass
 
-    def open_permission(self) -> None:
-        """跳到真正缺的那个权限面板。"""
+    def open_permission(self, which: str | None = None) -> None:
+        """打开权限面板。which 为空时自动跳到真正缺的那个。"""
         try:
             backend = self.service.backend
-            probe = getattr(backend, "listen_event_ok", None)
-            if probe is not None and probe() is False:
-                backend.open_permission_settings("listen_event")
-            else:
-                backend.open_permission_settings()
+            if which:
+                backend.open_permission_settings(which)
+                return
+            _ax_ok, li_ok = self.permission_flags()
+            backend.open_permission_settings(
+                "listen_event" if li_ok is False else "accessibility"
+            )
         except Exception:
             pass
 
@@ -580,11 +618,18 @@ class Application:
     def _sync_icon(self) -> None:
         if self.icon is None:
             return
-        missing = not self.permission_ok
+        ax_ok, li_ok = self.permission_flags()
+        missing = ax_ok is False or li_ok is False
         try:
             if missing:
+                if ax_ok is False and li_ok is False:
+                    which = "辅助功能和输入监控"
+                elif ax_ok is False:
+                    which = "辅助功能"
+                else:
+                    which = "输入监控"
                 self.icon.icon = icons.NEED_PERM
-                self.icon.title = f"{APP_NAME} · 缺少辅助功能权限，划词不会生效"
+                self.icon.title = f"{APP_NAME} · 缺「{which}」权限，划词不会生效"
             elif self.service.enabled:
                 self.icon.icon = icons.IDLE
                 self.icon.title = f"{APP_NAME} · 运行中"

@@ -25,6 +25,13 @@ class Backend:
     def permission_ok(self) -> tuple[bool, str]:
         return True, ""
 
+    def permission_state(self) -> dict[str, object]:
+        """分别报告每个权限的状态，供界面生成「缺哪个」的提示。
+
+        None = 该平台不适用 / 无法检测。
+        """
+        return {"accessibility": True, "listen_event": None}
+
     def prompt_permission(self) -> None:
         pass
 

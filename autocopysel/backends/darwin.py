@@ -41,6 +41,13 @@ class DarwinBackend(Backend):
         except Exception:
             return None
 
+    def permission_state(self) -> dict[str, object]:
+        try:
+            ax = bool(self.AS.AXIsProcessTrusted())
+        except Exception:
+            ax = None
+        return {"accessibility": ax, "listen_event": self.listen_event_ok()}
+
     def permission_ok(self) -> tuple[bool, str]:
         try:
             ax_ok = bool(self.AS.AXIsProcessTrusted())

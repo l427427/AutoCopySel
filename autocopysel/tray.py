@@ -92,8 +92,13 @@ def build_menu(app) -> Menu:
     service = app.service
 
     def status_label(item):
-        if not app.permission_ok:
-            return "⚠ 缺少辅助功能权限 — 点此重置并授权"
+        ax_ok, li_ok = app.permission_flags()
+        if ax_ok is False and li_ok is False:
+            return "⚠ 缺「辅助功能」和「输入监控」— 点此去补"
+        if ax_ok is False:
+            return "⚠ 缺「辅助功能」权限 — 点此去补"
+        if li_ok is False:
+            return "⚠ 缺「输入监控」权限 — 点此去补"
         if not service.enabled:
             return "○ 已暂停 — 点击启用"
         if not service.watcher_alive():
@@ -101,9 +106,10 @@ def build_menu(app) -> Menu:
         return "● 运行中 — 点击暂停"
 
     def status_action(icon, item):
-        if not app.permission_ok:
-            # 权限缺失时一步到位：清旧记录 + 打开设置页（对「勾了却无效」也有效）
-            app.fix_permission()
+        ax_ok, li_ok = app.permission_flags()
+        if ax_ok is False or li_ok is False:
+            # 缺权限时直接跳到缺的那个面板（不再默认去重置，少一步）
+            app.open_permission()
         elif service.enabled and not service.watcher_alive():
             app.run_diagnostics()
         else:
@@ -157,8 +163,15 @@ def build_menu(app) -> Menu:
 
     if sys.platform == "darwin":
         items += [
-            MenuItem("打开辅助功能设置", lambda i, it: app.open_permission()),
-            MenuItem("修复权限（重置授权记录）", lambda i, it: app.fix_permission()),
+            MenuItem(
+                "打开「辅助功能」设置",
+                lambda i, it: app.open_permission("accessibility"),
+            ),
+            MenuItem(
+                "打开「输入监控」设置",
+                lambda i, it: app.open_permission("listen_event"),
+            ),
+            MenuItem("修复权限（重置并重新授权）", lambda i, it: app.fix_permission()),
         ]
 
     items += [
