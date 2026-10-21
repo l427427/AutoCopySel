@@ -57,6 +57,10 @@ DEFAULTS: dict[str, Any] = {
     "detect_multi_click": True,
     # 按住 Ctrl / Cmd / Win 时拖动不触发（避免和「Cmd+拖动」类操作冲突）
     "ignore_with_modifiers": True,
+    # 只有纯鼠标选择才复制：按住 Shift 的点击/拖动（键盘辅助扩展选区）不触发。
+    # 关掉它 = 旧行为，Shift+点击也会复制。键盘选中（Cmd+A 等）无论如何都不触发，
+    # 因为本程序只监听鼠标事件，没有键盘监听器。
+    "mouse_only_selection": True,
     # 左键按住期间单击右键 → 粘贴；判定见 hook.py 的 _on_right_click
     "paste_gesture": True,
     # 连续贴两次之间至少间隔多少毫秒（过滤右键抖动）

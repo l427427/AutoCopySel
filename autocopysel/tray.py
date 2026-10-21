@@ -144,6 +144,11 @@ def build_menu(app) -> Menu:
         Menu.SEPARATOR,
         MenuItem("取词方式", mode_menu),
         MenuItem(
+            "仅鼠标选中才复制（排除 Shift/键盘扩展）",
+            lambda i, it: app.toggle_mouse_only(),
+            checked=lambda it: bool(cfg.get("mouse_only_selection")),
+        ),
+        MenuItem(
             "左键按住 + 右键单击 → 粘贴",
             lambda i, it: app.toggle_paste_gesture(),
             checked=lambda it: bool(cfg.get("paste_gesture")),

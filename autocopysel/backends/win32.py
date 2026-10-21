@@ -96,3 +96,10 @@ class Win32Backend(Backend):
             if self.u.GetAsyncKeyState(vk) & 0x8000:
                 return True
         return False
+
+    def shift_down(self) -> bool:
+        """VK_SHIFT = 0x10"""
+        try:
+            return bool(self.u.GetAsyncKeyState(0x10) & 0x8000)
+        except Exception:
+            return False

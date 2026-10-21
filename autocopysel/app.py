@@ -466,6 +466,13 @@ class Application:
     def toggle_sound(self) -> None:
         self.cfg.set("sound", not bool(self.cfg.get("sound")))
 
+    def toggle_mouse_only(self) -> None:
+        """切换「仅鼠标选中才复制」。"""
+        self.cfg.set(
+            "mouse_only_selection", not bool(self.cfg.get("mouse_only_selection"))
+        )
+        log.info("mouse_only_selection=%s", self.cfg.get("mouse_only_selection"))
+
     def toggle_paste_gesture(self) -> None:
         self.cfg.set("paste_gesture", not bool(self.cfg.get("paste_gesture")))
         log.info("paste_gesture=%s", self.cfg.get("paste_gesture"))

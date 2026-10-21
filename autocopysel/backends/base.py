@@ -83,4 +83,13 @@ class Backend:
 
     # ---- 状态 ----
     def modifiers_down(self) -> bool:
+        """Cmd / Ctrl / Option(Win) 是否被按住。"""
+        return False
+
+    def shift_down(self) -> bool:
+        """Shift 是否被按住。
+
+        Shift + 点击 / Shift + 拖动 = 用键盘辅助扩展选区，
+        不属于「纯鼠标选择」，默认模式（mouse_only_selection）下不触发复制。
+        """
         return False

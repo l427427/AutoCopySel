@@ -176,12 +176,20 @@ class MouseSelectionWatcher:
         if kind is None:
             return True
 
-        if self.cfg.get("ignore_with_modifiers"):
-            try:
-                if self.backend.modifiers_down():
-                    return True
-            except Exception:
-                pass
+        # 过滤掉「不是纯鼠标选择」的情况：
+        #   · 按住 Cmd / Ctrl / Option(Win)  → 多半是组合操作，不是取词
+        #   · 按住 Shift                     → 键盘辅助扩展选区（Shift+点击/拖动）
+        # 键盘选中（Cmd+A、Shift+方向键）本来就不会到这里，因为本程序只监听鼠标事件。
+        skip_for_modifier = False
+        try:
+            if self.cfg.get("ignore_with_modifiers") and self.backend.modifiers_down():
+                skip_for_modifier = True
+            elif self.cfg.get("mouse_only_selection") and self.backend.shift_down():
+                skip_for_modifier = True
+        except Exception:
+            pass
+        if skip_for_modifier:
+            return True
 
         try:
             self._on_select(int(x), int(y), kind)
