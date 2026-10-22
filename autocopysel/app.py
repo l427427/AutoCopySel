@@ -246,15 +246,6 @@ class Service:
             pass
 
 
-def permission_buttons(ax_ok: bool, li_ok: bool) -> tuple[str, str]:
-    """缺哪个权限就把哪个放第一位（macOS 的默认按钮 = 第一个）。"""
-    if ax_ok is False:
-        return "打开辅助功能", "打开输入监控"
-    if li_ok is False:
-        return "打开输入监控", "打开辅助功能"
-    return "打开辅助功能", "打开输入监控"
-
-
 class Application:
     """把 Service 和托盘图标拼起来。"""
 
@@ -397,8 +388,50 @@ class Application:
         li = state.get("listen_event")
         return (ax is not False, li is not False)
 
+    def _permission_prompt_text(
+        self, ax_ok: bool, li_ok: bool, opened: list[str]
+    ) -> str:
+        lines = ["本程序需要两个系统权限，缺一个都不工作：", ""]
+        lines.append(f"{'✓' if ax_ok else '✗'}  辅助功能 —— 读取选中的文字")
+        lines.append(f"{'✓' if li_ok else '✗'}  输入监控 —— 监听鼠标（划词就靠它）")
+        lines.append("")
+        for name in opened:
+            lines.append(f"「{name}」设置页已经打开，去列表里勾上本程序。")
+        if opened:
+            lines.append("")
+        missing = []
+        if ax_ok is False:
+            missing.append("辅助功能")
+        if li_ok is False:
+            missing.append("输入监控")
+        if opened:
+            # 已经打开过的就不再劝，直接指下一个该开的
+            remaining = [
+                name for name in ("辅助功能", "输入监控") if f"打开{name}" not in opened
+            ]
+            if remaining:
+                lines.append(f"接着点「打开{remaining[0]}」。")
+            else:
+                lines.append("两个面板都打开了，分别在列表里勾上本程序就完成。")
+        elif len(missing) == 1:
+            lines.append(f"现在只差「{missing[0]}」。")
+        elif len(missing) == 2:
+            lines.append("两个都还缺，点下面的按钮依次打开。")
+        lines.append("")
+        lines.append("勾选后自动生效不用重启；列表里有同名旧条目，先按 − 删掉再用 + 添加。")
+        return "\n".join(lines)
+
+    def _permission_buttons_for(self, ax_ok: bool, li_ok: bool) -> tuple[str, ...]:
+        btns: list[str] = []
+        if ax_ok is False:
+            btns.append("打开辅助功能")
+        if li_ok is False:
+            btns.append("打开输入监控")
+        btns.append("稍后")
+        return tuple(btns[:3])
+
     def _notify_permission_missing(self, force: bool = False) -> None:
-        """缺权限时说清楚：缺哪个、为什么缺它就不工作、点哪里去补。"""
+        """缺权限时连续引导：打开一个面板后继续提示另一个，直到补齐或用户放弃。"""
         if self._alerted_permission and not force:
             return
         if self._dialog_open:
@@ -407,49 +440,56 @@ class Application:
         self._dialog_open = True
         self._sync_icon()
         self._refresh_menu()
+        threading.Thread(
+            target=self._permission_guide_worker, name="perm-dialog", daemon=True
+        ).start()
 
-        def worker() -> None:
-            try:
-                from .tray import native_prompt
+    def _permission_guide_worker(self) -> None:
+        """一轮一个面板：点「打开辅助功能」→ 弹下一个提示还缺输入监控，反之亦然。"""
+        try:
+            from .tray import native_prompt
 
+            backend = self.service.backend
+            opened: list[str] = []
+
+            for _round in range(4):
                 ax_ok, li_ok = self.permission_flags()
-                lines = [
-                    "本程序需要两个系统权限，缺一个都不工作：",
-                    "",
-                    f"{'✓' if ax_ok else '✗'}  辅助功能 —— 读取选中的文字",
-                    f"{'✓' if li_ok else '✗'}  输入监控 —— 监听鼠标（划词就靠它）",
-                    "",
-                ]
-                if ax_ok and not li_ok:
-                    lines.append("现在只差「输入监控」，补上就能用。")
-                    lines.append("")
-                elif li_ok and not ax_ok:
-                    lines.append("现在只差「辅助功能」，补上就能用。")
-                    lines.append("")
-                lines.append("点下面的按钮会直接跳到对应面板，勾选后自动生效，不用重启。")
-                lines.append("如果列表里已有同名的旧条目，先按 − 删掉，再用 + 添加本程序。")
-
-                first, second = permission_buttons(ax_ok, li_ok)
+                if ax_ok and li_ok:
+                    if opened:
+                        # 补齐了要给正向反馈，否则用户不知道到底成没成
+                        native_prompt(
+                            f"{APP_NAME} 权限已就绪",
+                            "两个权限都齐了，划词复制和右键粘贴现在就能用。",
+                            buttons=("好的",),
+                            wait=False,
+                        )
+                    return
 
                 choice = native_prompt(
                     f"{APP_NAME} 需要系统权限",
-                    "\n".join(lines),
-                    buttons=(first, second, "稍后"),
+                    self._permission_prompt_text(ax_ok, li_ok, opened),
+                    buttons=self._permission_buttons_for(ax_ok, li_ok),
                     wait=True,
                 )
                 log.info("permission dialog choice: %s", choice)
 
-                backend = self.service.backend
                 if choice == "打开辅助功能":
                     backend.open_permission_settings("accessibility")
                 elif choice == "打开输入监控":
                     backend.open_permission_settings("listen_event")
-            except Exception:
-                log.debug("permission dialog failed", exc_info=True)
-            finally:
-                self._dialog_open = False
+                else:
+                    return  # 稍后 / 直接关掉弹窗
 
-        threading.Thread(target=worker, name="perm-dialog", daemon=True).start()
+                if choice not in opened:
+                    opened.append(choice)
+                # 等系统设置窗口浮出来再弹下一轮，否则新弹窗会被它盖住
+                time.sleep(0.9)
+
+            log.info("permission guide: 引导 4 轮仍未补齐，停止")
+        except Exception:
+            log.debug("permission dialog failed", exc_info=True)
+        finally:
+            self._dialog_open = False
 
     @property
     def permission_ok(self) -> bool:
