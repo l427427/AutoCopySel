@@ -418,6 +418,13 @@ class Application:
         elif len(missing) == 2:
             lines.append("两个都还缺，点下面的按钮依次打开。")
         lines.append("")
+        if opened:
+            # 打开过面板却还报缺，最常见的原因就是勾到了旧版本的幽灵记录
+            lines.append(
+                "如果你看到本程序已经勾着却仍报缺，那是旧版本的记录"
+                "（重新打包后二进制变了），需要点托盘菜单的「修复权限」重置一次。"
+            )
+            lines.append("")
         lines.append("勾选后自动生效不用重启；列表里有同名旧条目，先按 − 删掉再用 + 添加。")
         return "\n".join(lines)
 
