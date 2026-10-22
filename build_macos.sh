@@ -39,8 +39,23 @@ PLIST="$APP/Contents/Info.plist"
   || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 10" "$PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string AutoCopySel 需要读取选中文本" "$PLIST" 2>/dev/null || true
 
-# 先签内层再签外层（--deep 已废弃，这里保持 --force 覆盖 PyInstaller 的临时签名）
-codesign --force --deep --sign - "$APP" 2>/dev/null || true
+# 优先用本机「代码签名」证书：
+#   ad-hoc（-s -）的授权凭据是二进制哈希 cdhash，每打一次包就变一次，
+#   系统里那条旧授权记录会「还亮着但已失效」，必须每次重新重置授权。
+#   用固定证书签名后，designated requirement 绑定的是证书而不是哈希，
+#   重新打包后 TCC 记录依然有效，不用再反复授权。
+SIGN_ID="${AUTOCOPYSEL_SIGN_ID:-}"
+if [ -z "$SIGN_ID" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "AutoCopySel Dev"; then
+  SIGN_ID="AutoCopySel Dev"
+fi
+
+if [ -n "$SIGN_ID" ]; then
+  echo "签名身份：$SIGN_ID（固定证书 → 重新打包后授权不会失效）"
+  codesign --force --deep --sign "$SIGN_ID" "$APP" 2>/dev/null || true
+else
+  echo "签名身份：ad-hoc（未找到「AutoCopySel Dev」证书 → 每打一次包都要重新授权一次）"
+  codesign --force --deep --sign - "$APP" 2>/dev/null || true
+fi
 
 CDHASH=$(codesign -d -vv "$APP" 2>&1 | grep -o 'CDHash=[0-9a-f]*' | head -1 || true)
 
@@ -48,9 +63,20 @@ echo
 echo "打包完成：$APP   ${CDHASH}"
 echo "校验："
 codesign --verify --strict "$APP" && echo "  签名有效"
-echo
-echo "安装 & 授权（重要）："
-echo "  cp -R \"$APP\" /Applications/"
-echo "  tccutil reset Accessibility com.liqin.autocopysel   # 重建后 cdhash 变了，必须重置旧授权"
-echo "  open /Applications/AutoCopySel.app"
-echo "  然后在「隐私与安全性 → 辅助功能」里勾选 AutoCopySel（2 秒内自动生效，不用重启）"
+
+if [ -n "$SIGN_ID" ]; then
+  echo
+  echo "安装（用固定证书签名，授权只需做一次）："
+  echo "  cp -R \"$APP\" /Applications/ && open /Applications/AutoCopySel.app"
+else
+  echo
+  echo "安装 & 授权（重要）："
+  echo "  cp -R \"$APP\" /Applications/"
+  echo "  tccutil reset Accessibility com.liqin.autocopysel   # 重建后 cdhash 变了，必须重置旧授权"
+  echo "  tccutil reset ListenEvent   com.liqin.autocopysel"
+  echo "  open /Applications/AutoCopySel.app"
+  echo "  然后在「辅助功能」+「输入监控」里都勾选 AutoCopySel（2 秒内生效，不用重启）"
+  echo
+  echo "  想彻底摆脱「每次打包都要重新授权」：在钥匙串访问里建一张"
+  echo "  「AutoCopySel Dev」代码签名证书，本脚本会自动用它签名。"
+fi
