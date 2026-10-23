@@ -47,7 +47,7 @@ class Service:
         self.history: deque[tuple[str, float]] = deque(
             maxlen=max(1, int(cfg.get("history_size") or 20))
         )
-        self.stats = {"ok": 0, "skip": 0, "error": 0, "paste": 0}
+        self.stats = {"ok": 0, "skip": 0, "error": 0, "paste": 0, "delete": 0}
         self.last_message = ""
 
         self._q: queue.Queue = queue.Queue(maxsize=16)
@@ -57,7 +57,11 @@ class Service:
         self._worker: threading.Thread | None = None
         self._running = False
         self._watcher = MouseSelectionWatcher(
-            self._submit, cfg, self.backend, on_paste=self._paste_gesture
+            self._submit,
+            cfg,
+            self.backend,
+            on_paste=self._paste_gesture,
+            on_delete=self._delete_gesture,
         )
 
         # 由 Application 注入的事件回调：on_result(kind, text)
@@ -155,6 +159,47 @@ class Service:
         self.last_message = "左键+右键：已粘贴"
         log.info("paste gesture: 已发送粘贴（累计 %d 次）", self.stats["paste"])
         self._emit("paste")
+
+    def _delete_gesture(self) -> None:
+        """反向拖选（右→左）+ 右键：删除当前选中内容。
+
+        删除不可逆，所以发 Delete 键之前**必须先确认真的有选区**：
+        没有选区时按 Delete 会删掉光标前的一个字符，那是最糟的误操作。
+        读不到选区的应用宁可不动，也不猜。
+        """
+        if not self.enabled:
+            return
+        if not self.cfg.get("reverse_drag_delete", True):
+            return
+
+        text = None
+        try:
+            text = self.backend.read_selection_ax()
+        except Exception:
+            text = None
+
+        if not text or not text.strip():
+            self.last_message = "反向右键：没检测到选中内容，未删除"
+            log.info("delete gesture: 无选区，跳过（避免误删单个字符）")
+            self._emit("delete_skip")
+            return
+
+        ok = False
+        try:
+            ok = bool(self.backend.send_delete())
+        except Exception as exc:
+            log.warning("delete gesture failed: %s", exc)
+
+        if not ok:
+            self.last_message = "反向右键：删除失败"
+            return
+
+        self.stats["delete"] += 1
+        self.last_message = f"反向右键：已删除 {len(text)} 字"
+        log.info(
+            "delete gesture: 已删除 %d 字（累计 %d 次）", len(text), self.stats["delete"]
+        )
+        self._emit("deleted")
 
     def _emit(self, kind: str) -> None:
         if self.on_result is None:
@@ -520,6 +565,13 @@ class Application:
         )
         log.info("mouse_only_selection=%s", self.cfg.get("mouse_only_selection"))
 
+    def toggle_reverse_delete(self) -> None:
+        """切换「反向拖选 + 右键 = 删除」。"""
+        self.cfg.set(
+            "reverse_drag_delete", not bool(self.cfg.get("reverse_drag_delete"))
+        )
+        log.info("reverse_drag_delete=%s", self.cfg.get("reverse_drag_delete"))
+
     def toggle_paste_gesture(self) -> None:
         self.cfg.set("paste_gesture", not bool(self.cfg.get("paste_gesture")))
         log.info("paste_gesture=%s", self.cfg.get("paste_gesture"))
@@ -625,6 +677,7 @@ class Application:
             f"状态：{'运行中' if self.service.enabled else '已暂停'}\n"
             f"累计复制：{self.service.stats['ok']} 次\n"
             f"累计粘贴：{self.service.stats.get('paste', 0)} 次\n"
+            f"累计删除：{self.service.stats.get('delete', 0)} 次\n"
             f"配置文件：{self.cfg.path}"
         )
 
@@ -644,8 +697,11 @@ class Application:
         # 每次都闪一下会变成噪音。
         if kind in ("ok", "paste"):
             self._flash("ok")
-        elif kind == "paste_empty":
-            # 手势识别到了但剪贴板是空的，闪黄点提示，否则用户以为手势没生效
+        elif kind == "deleted":
+            # 删除是破坏性操作，用红点让人一眼确认「确实删了」
+            self._flash("danger")
+        elif kind in ("paste_empty", "delete_skip"):
+            # 手势识别到了但没实际动作（剪贴板空 / 没选区），闪黄点
             self._flash("warn")
 
     def _on_error(self, exc) -> None:
@@ -660,7 +716,12 @@ class Application:
         if self.icon is None:
             return
         try:
-            self.icon.icon = icons.COPIED if state == "ok" else icons.WARN
+            if state == "ok":
+                self.icon.icon = icons.COPIED
+            elif state == "danger":
+                self.icon.icon = icons.DELETED
+            else:
+                self.icon.icon = icons.WARN
         except Exception:
             return
         if self._flash_timer is not None:

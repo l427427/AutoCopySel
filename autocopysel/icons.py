@@ -35,7 +35,7 @@ def state_icon(paused: bool = False, flash: str | None = None) -> Image.Image:
     img = _body(_DIM if paused else _LIGHT)
     if flash:
         d = ImageDraw.Draw(img)
-        color = _GREEN if flash == "ok" else _ORANGE
+        color = _GREEN if flash == "ok" else (_RED if flash == "danger" else _ORANGE)
         d.ellipse([38, 40, 62, 64], fill=color, outline=_OUTLINE, width=3)
     return img
 
@@ -54,4 +54,5 @@ IDLE = state_icon(False)
 PAUSED = state_icon(True)
 COPIED = state_icon(False, "ok")
 WARN = state_icon(False, "warn")
+DELETED = state_icon(False, "danger")
 NEED_PERM = permission_icon()

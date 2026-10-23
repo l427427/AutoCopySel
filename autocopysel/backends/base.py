@@ -51,6 +51,22 @@ class Backend:
         """模拟系统复制快捷键。"""
         raise NotImplementedError
 
+    def send_delete(self) -> bool:
+        """发送删除键：macOS 的 Delete（退格）= pynput 的 Key.backspace。
+
+        有选区时删除选区，没有选区时删光标前一个字符——所以调用方必须先
+        确认真的存在选中内容，绝不能无条件发送。
+        """
+        try:
+            from pynput.keyboard import Controller, Key
+
+            kb = Controller()
+            kb.press(Key.backspace)
+            kb.release(Key.backspace)
+            return True
+        except Exception:
+            return False
+
     def send_paste(self) -> None:
         """模拟系统粘贴快捷键（Cmd+V / Ctrl+V）。
 

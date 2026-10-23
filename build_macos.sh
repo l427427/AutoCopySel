@@ -34,9 +34,9 @@ PLIST="$APP/Contents/Info.plist"
 # 后台常驻：不出现在 Dock 和 Cmd+Tab
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.5" "$PLIST" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 10" "$PLIST" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 10" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.6" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 11" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 11" "$PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string AutoCopySel 需要读取选中文本" "$PLIST" 2>/dev/null || true
 
 # 优先用本机「代码签名」证书：

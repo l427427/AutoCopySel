@@ -25,11 +25,13 @@ class MouseSelectionWatcher:
         cfg,
         backend,
         on_paste: Callable[[], None] | None = None,
+        on_delete: Callable[[], None] | None = None,
     ):
         self._on_select = on_select
         self.cfg = cfg
         self.backend = backend
         self.on_paste = on_paste
+        self.on_delete = on_delete
 
         self._listener = None
         self._press: tuple[float, float, float] | None = None
@@ -42,8 +44,11 @@ class MouseSelectionWatcher:
         # 「左键按住 + 右键单击 → 粘贴」用到的状态
         self._left_down = False  # 左键此刻是否按着
         self._right_armed = False  # 这次右键按下是否发生在左键按着期间
-        self._suppress_capture = False  # 本个左键周期已用于粘贴，松手不再自动复制
+        self._suppress_capture = False  # 本个左键周期已用于手势，松手不再自动复制
         self._last_paste_at = 0.0
+        self._last_delete_at = 0.0
+        # 拖选方向：1 = 左→右（正向，粘贴）；-1 = 右→左（反向，删除）；0 = 没动
+        self._drag_dir = 0
 
     # ---------- 生命周期 ----------
     def start(self) -> bool:
@@ -108,7 +113,7 @@ class MouseSelectionWatcher:
         # 后端没有 right 这个枚举成员，写死比较会让每个事件都抛异常，监听直接全废。
         if getattr(button, "name", "") == "right":
             try:
-                return self._on_right_click(pressed)
+                return self._on_right_click(x, pressed)
             except Exception:
                 log.exception("右键手势处理异常")
                 return True
@@ -198,28 +203,48 @@ class MouseSelectionWatcher:
         return True
 
     # ---------- 左键按住 + 右键单击 → 粘贴 ----------
-    def _on_right_click(self, pressed: bool) -> bool:
-        """只有「左键按住期间完成一次右键单击（按下+释放）」才触发粘贴。
+    def _on_right_click(self, x, pressed: bool) -> bool:
+        """「左键按住期间完成一次右键单击」= 手势。
 
         三项必须同时成立：
         1. 右键按下那一刻左键是按着的（记进 _right_armed）；
         2. 右键释放那一刻左键仍然按着（中途松了左键就不算）；
         3. 右键必须走完按下→释放，只按下半程不算。
 
-        因此：左键单独释放不触发，右键单独点击不触发。
+        动作按拖选方向分流（两个动作操作上完全一样，只能靠方向区分）：
+          左→右（正向）→ 粘贴
+          右→左（反向）→ 删除选中内容
         """
         if pressed:
             with self._lock:
                 self._right_armed = self._left_down
+                press = self._press
+            # 方向只在「左键按着且确实拖动过」时才有意义，否则按 0 处理（走粘贴）
+            threshold = max(float(self.cfg.get("drag_threshold_px") or 6), 8.0)
+            direction = 0
+            if press is not None and self._right_armed:
+                dx = float(x) - press[0]
+                if dx <= -threshold:
+                    direction = -1  # 右→左
+                elif dx >= threshold:
+                    direction = 1  # 左→右
+            with self._lock:
+                self._drag_dir = direction
             return True
 
         with self._lock:
             armed = self._right_armed
             self._right_armed = False
             left_still_down = self._left_down
+            direction = self._drag_dir
+            self._drag_dir = 0
 
         if armed and left_still_down:
-            self._fire_paste()
+            # 关掉删除开关后，反向手势回落到粘贴，不至于变成一个空手势
+            if direction < 0 and self.cfg.get("reverse_drag_delete"):
+                self._fire_delete()
+            else:
+                self._fire_paste()
         return True
 
     def _fire_paste(self) -> None:
@@ -237,3 +262,20 @@ class MouseSelectionWatcher:
             self.on_paste()
         except Exception:
             log.exception("粘贴手势回调异常")
+
+    def _fire_delete(self) -> None:
+        """反向拖选 + 右键：删除选中内容。"""
+        if self.on_delete is None or not self.cfg.get("reverse_drag_delete"):
+            return
+        now = time.monotonic()
+        debounce = float(self.cfg.get("paste_debounce_ms") or 250) / 1000.0
+        if now - self._last_delete_at < debounce:
+            return
+        self._last_delete_at = now
+        with self._lock:
+            # 同样把本个左键周期标记为「已消费」，松手不再自动复制
+            self._suppress_capture = True
+        try:
+            self.on_delete()
+        except Exception:
+            log.exception("删除手势回调异常")

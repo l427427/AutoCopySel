@@ -65,6 +65,9 @@ DEFAULTS: dict[str, Any] = {
     "paste_gesture": True,
     # 连续贴两次之间至少间隔多少毫秒（过滤右键抖动）
     "paste_debounce_ms": 250,
+    # 反向拖选（右→左）按住左键点右键 → 删除选中内容；正向（左→右）仍是粘贴。
+    # 删除是破坏性操作，执行前会用无障碍接口确认确实存在选区。
+    "reverse_drag_delete": True,
     # 文本长度过滤
     "min_length": 1,
     "max_length": 100000,

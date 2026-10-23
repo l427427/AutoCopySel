@@ -154,6 +154,11 @@ def build_menu(app) -> Menu:
             checked=lambda it: bool(cfg.get("paste_gesture")),
         ),
         MenuItem(
+            "反向拖选（右→左）+ 右键 → 删除选中",
+            lambda i, it: app.toggle_reverse_delete(),
+            checked=lambda it: bool(cfg.get("reverse_drag_delete")),
+        ),
+        MenuItem(
             "提示音",
             lambda i, it: app.toggle_sound(),
             checked=lambda it: bool(cfg.get("sound")),
