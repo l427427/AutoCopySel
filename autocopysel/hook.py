@@ -267,6 +267,14 @@ class MouseSelectionWatcher:
         """反向拖选 + 右键：删除选中内容。"""
         if self.on_delete is None or not self.cfg.get("reverse_drag_delete"):
             return
+        # 按着 Cmd / Shift 等修饰键时不删：那多半是在做键盘辅助选择，
+        # 用户此刻的意图不是「删掉这段」。误删的代价远大于少删一次。
+        try:
+            if self.backend.modifiers_down() or self.backend.shift_down():
+                log.info("delete gesture: 有修饰键按下，跳过")
+                return
+        except Exception:
+            pass
         now = time.monotonic()
         debounce = float(self.cfg.get("paste_debounce_ms") or 250) / 1000.0
         if now - self._last_delete_at < debounce:
